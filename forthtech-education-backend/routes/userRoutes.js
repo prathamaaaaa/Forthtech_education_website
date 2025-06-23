@@ -229,8 +229,8 @@ router.post('/remove-request', async (req, res) => {
 router.post('/accept-request', async (req, res) => {
   const { fromId, toId } = req.body;
   const io = req.app.get('io');
-  const onlineUsers = req.app.get('onlineUsersMap'); // 👈 you'll expose this below
-
+  const onlineUsers = req.app.get('onlineUsersMap'); 
+console.log("Accept ddddddddddddrequest:", { fromId, toId, onlineUsers });
   try {
     const sender = await User.findById(fromId);
     const receiver = await User.findById(toId);
@@ -258,7 +258,7 @@ router.post('/accept-request', async (req, res) => {
       fromId: toId,
       toId: fromId,
       type: "system",
-      message: `You are now connected with ${receiver.firstName} ${receiver.lastName}`,
+      message: `You are now connectedddddddddddd with ${receiver.firstName} ${receiver.lastName}`,
       timestamp: new Date().toISOString()
     };
 
@@ -266,11 +266,10 @@ router.post('/accept-request', async (req, res) => {
       fromId: fromId,
       toId: toId,
       type: "system",
-      message: `You are now connected with ${sender.firstName} ${sender.lastName}`,
+      message: `You are now connectdddddddddddddddddded with ${sender.firstName} ${sender.lastName}`,
       timestamp: new Date().toISOString()
     };
 
-    // ✅ Emit to connected sockets only
     if (senderSocketId) io.to(senderSocketId).emit("system-message", messageForSender);
     if (receiverSocketId) io.to(receiverSocketId).emit("system-message", messageForReceiver);
     console.log("✅ System messages sent to both users");
