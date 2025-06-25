@@ -38,10 +38,11 @@ mongoose.connect(process.env.MONGO_URI, {
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/users', require('./routes/loginRoutes'));
 app.use('/api', require('./routes/messageRoutes'));
+app.use('/api/groups', require('./routes/groupRoutes')); 
 
 // 🔌 Socket.IO
 io.on('connection', (socket) => {
-  handleSocketConnection(io, socket, onlineUsers); // 👈 Delegate to handler
+  handleSocketConnection(io, socket, onlineUsers); 
 });
 
 // Start server

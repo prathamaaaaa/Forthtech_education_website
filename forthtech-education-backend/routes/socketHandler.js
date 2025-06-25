@@ -1,7 +1,7 @@
 // socketHandler.js
 const PublicMessage = require('../models/PublicMessage');
 const PrivateMessage = require('../models/PrivateMessage');
-
+const GroupMessage = require('../models/GroupMessage');
 const handleSocketConnection = (io, socket, onlineUsers) => {
   const userId = socket.handshake.auth?.userId;
 
@@ -63,6 +63,30 @@ const handleSocketConnection = (io, socket, onlineUsers) => {
     }
   });
 
+
+
+   socket.on("load-group-messages", async ({ groupId }) => {
+    try {
+      const msgs = await GroupMessage.find({ groupId })
+        .populate("senderId", "firstName lastName _id")
+        .sort({ timestamp: 1 });
+      socket.emit("group-message-history", msgs);
+    } catch (err) {
+      console.error("Failed to load group messages:", err);
+    }
+  });
+
+
+
+    socket.on("send-group-message", async (msg) => {
+    try {
+      const saved = await GroupMessage.create(msg);
+      const populated = await saved.populate("senderId", "firstName lastName _id");
+      io.emit("receive-group-message", populated); // Broadcast to all
+    } catch (err) {
+      console.error("Failed to save group message:", err);
+    }
+  });
   socket.on("disconnect", () => {
     console.log(`🔴 ${socket.id} disconnected`);
     for (let [uid, sid] of onlineUsers.entries()) {
