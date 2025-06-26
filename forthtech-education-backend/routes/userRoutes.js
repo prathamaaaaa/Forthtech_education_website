@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 // const io = require('socket.io')(server, { /* options */ });
 const User = require('../models/userModel');
+const GroupMessage = require('../models/GroupMessage');
+const PrivateMessage = require('../models/PrivateMessage');
+const Group = require('../models/Group');
+const mongoose = require('mongoose');
+
 const { io, onlineUsers } = require('../app');
 
 router.post('/', async (req, res) => {
@@ -279,6 +284,62 @@ console.log("Accept ddddddddddddrequest:", { fromId, toId, onlineUsers });
     res.status(500).json({ error: 'Server error accepting request' });
   }
 });
+
+// POST /api/messages/delete-multiple
+router.post("/delete-multiple", async (req, res) => {
+  const { ids, userId, forEveryone } = req.body;
+  const io = req.app.get("io"); // ✅ Get io instance
+
+  try {
+    const objectIds = ids.map(id => new mongoose.Types.ObjectId(id));
+    const userIdStr = userId.toString();
+
+   if (forEveryone) {
+  await PrivateMessage.deleteMany({ _id: { $in: objectIds } });
+  const groupMessages = await GroupMessage.find({ _id: { $in: objectIds } });
+
+  await GroupMessage.deleteMany({ _id: { $in: objectIds } });
+
+  const io = req.app.get("io"); 
+
+  const groupIds = [...new Set(groupMessages.map(msg => msg.groupId?.toString()))];
+  for (const groupId of groupIds) {
+    io.to(groupId).emit("delete-messages", { ids: objectIds });
+  }
+}
+ else {
+      await PrivateMessage.updateMany(
+        { _id: { $in: objectIds } },
+        { $pull: { visibleTo: userIdStr } }
+      );
+
+      await GroupMessage.updateMany(
+        { _id: { $in: objectIds } },
+        { $pull: { visibleTo: userIdStr } }
+      );
+
+      // Find messages with empty visibleTo
+      const toDelete = await GroupMessage.find({
+        _id: { $in: objectIds },
+        visibleTo: { $exists: true, $eq: [] }
+      });
+
+      const toDeleteIds = toDelete.map(msg => msg._id);
+      if (toDeleteIds.length > 0) {
+        await GroupMessage.deleteMany({ _id: { $in: toDeleteIds } });
+
+        io.emit("delete-messages", { ids: toDeleteIds });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Delete error:", err);
+    res.status(500).json({ error: "Failed to delete messages" });
+  }
+});
+
+
 
 
 // 🔹 Delete User

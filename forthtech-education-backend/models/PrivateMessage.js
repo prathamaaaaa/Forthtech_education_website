@@ -11,6 +11,12 @@ const privateMessageSchema = new mongoose.Schema({
   timestamp: {
     type: Date,
     default: Date.now
+  },
+    visibleTo: {
+    type: [String], // list of userIds who can see the message
+    default: function () {
+      return [this.senderId, this.receiverId]; // both can see by default
+    }
   }
 });
 
