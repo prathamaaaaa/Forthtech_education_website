@@ -1,14 +1,21 @@
 const mongoose = require('mongoose');
 
-const groupMessageSchema = new mongoose.Schema({
-  groupId: { type: mongoose.Schema.Types.ObjectId, ref: "Group", required: true },
-  senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  message: { type: String, required: true },
+const GroupMessageSchema = new mongoose.Schema({
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  message: { type: String, default: "" },
+  fileUrl: { type: String, default: "" },
+  fileType: { type: String, default: "" },
   timestamp: { type: Date, default: Date.now },
-   visibleTo: {
-    type: [String], // list of userIds who can see the message
-    default: [] // empty until created
-  }
+  groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
+  visibleTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 });
 
-module.exports = mongoose.model("GroupMessage", groupMessageSchema);
+// ✅ Place this AFTER the schema is defined
+GroupMessageSchema.pre('validate', function (next) {
+  if ((!this.message || this.message.trim() === '') && (!this.fileUrl || this.fileUrl.trim() === '')) {
+    this.invalidate('message', 'Either message or file must be provided.');
+  }
+  next();
+});
+
+module.exports = mongoose.model('GroupMessage', GroupMessageSchema);

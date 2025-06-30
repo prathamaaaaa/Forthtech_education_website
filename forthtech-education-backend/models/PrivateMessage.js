@@ -4,6 +4,9 @@ const privateMessageSchema = new mongoose.Schema({
   senderId: String,
   receiverId: String,
   message: String,
+  fileUrl: { type: String, default: "" },
+fileType: { type: String, default: "" }, 
+
   read: {
     type: Boolean,
     default: false

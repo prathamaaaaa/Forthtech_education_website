@@ -51,12 +51,31 @@ socket.on("join-group", ({ groupId }) => {
   //   socket.emit("message-sent", msg);
   // });
 
-socket.on("send-message", async ({ senderId, receiverId, message }) => {
+// socket.on("send-message", async ({ senderId, receiverId, message }) => {
+//   const msg = await PrivateMessage.create({
+//     senderId,
+//     receiverId,
+//     message,
+//     visibleTo: [senderId, receiverId], // 👈 Only these 2 can see the message
+//   });
+
+//   const receiverSocketId = onlineUsers.get(receiverId);
+//   if (receiverSocketId) {
+//     io.to(receiverSocketId).emit("receive-message", msg);
+//   }
+//   socket.emit("message-sent", msg);
+// });
+
+
+
+socket.on("send-message", async ({ senderId, receiverId, message, fileUrl, fileType }) => {
   const msg = await PrivateMessage.create({
     senderId,
     receiverId,
     message,
-    visibleTo: [senderId, receiverId], // 👈 Only these 2 can see the message
+    fileUrl: fileUrl || "",
+    fileType: fileType || "",
+    visibleTo: [senderId, receiverId],
   });
 
   const receiverSocketId = onlineUsers.get(receiverId);
@@ -65,6 +84,8 @@ socket.on("send-message", async ({ senderId, receiverId, message }) => {
   }
   socket.emit("message-sent", msg);
 });
+
+
 
 
 
@@ -171,27 +192,79 @@ socket.on("delete-messages", ({ ids }) => {
 
 
 
+// socket.on("send-group-message", async (data) => {
+//   try {
+//     const newMessage = await GroupMessage.create({
+//       senderId: data.senderId,
+//       message: data.message,
+//       groupId: data.groupId,
+//       timestamp: new Date(),
+//       visibleTo: data.visibleTo || [],
+//     });
+
+//     const populatedMessage = await GroupMessage.findById(newMessage._id)
+//       .populate("senderId", "firstName lastName _id");
+
+//     io.to(data.groupId).emit("receive-group-message", populatedMessage); 
+//   } catch (err) {
+//     console.error("send-group-message error:", err);
+//   }
+// });
+
+
 socket.on("send-group-message", async (data) => {
-  try {
-    const newMessage = await GroupMessage.create({
-      senderId: data.senderId,
-      message: data.message,
-      groupId: data.groupId,
-      timestamp: new Date(),
-      visibleTo: data.visibleTo || [],
-    });
+  const newMessage = await GroupMessage.create({
+    senderId: data.senderId,
+    message: data.message,
+    fileUrl: data.fileUrl || "",
+    fileType: data.fileType || "",
+    groupId: data.groupId,
+    timestamp: new Date(),
+    visibleTo: data.visibleTo || [],
+  });
 
-    const populatedMessage = await GroupMessage.findById(newMessage._id)
-      .populate("senderId", "firstName lastName _id");
+  const populatedMessage = await GroupMessage.findById(newMessage._id)
+    .populate("senderId", "firstName lastName _id");
 
-    io.to(data.groupId).emit("receive-group-message", populatedMessage); // ✅ Now has sender details
-  } catch (err) {
-    console.error("send-group-message error:", err);
-  }
+  io.to(data.groupId).emit("receive-group-message", populatedMessage);
 });
 
 
 
+
+
+
+socket.on("group-created", ({ group, memberIds }) => {
+  memberIds.forEach((memberId) => {
+    console.log(`🔔 Notifying member ${memberId} about new group ${group.name}`);
+    const receiverSocketId = onlineUsers.get(memberId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("group-created-notification", {
+        message: `You have been added to the group "${group.name}"`,
+        group,
+      });
+    }
+  });
+});
+
+  socket.on("leave-group", async ({ groupId, userId }) => {
+    try {
+      const group = await Group.findById(groupId);
+      if (!group) return;
+
+      if (group.creator.toString() === userId) {
+        socket.emit("leave-group-error", "Creator cannot leave.");
+        return;
+      }
+
+      group.members = group.members.filter(memberId => memberId.toString() !== userId);
+      await group.save();
+
+      socket.emit("left-group", groupId);
+    } catch (err) {
+      console.error(err);
+    }
+  });
 
   socket.on("disconnect", () => {
     console.log(`🔴 ${socket.id} disconnected`);

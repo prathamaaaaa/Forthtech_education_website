@@ -4,8 +4,8 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const handleSocketConnection = require('./routes/socketHandler'); // 👈 Import
-
+const handleSocketConnection = require('./routes/socketHandler'); 
+const notificationRoutes = require('./routes/notificationRoutes'); 
 dotenv.config();
 
 const app = express();
@@ -39,6 +39,9 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/users', require('./routes/loginRoutes'));
 app.use('/api', require('./routes/messageRoutes'));
 app.use('/api/groups', require('./routes/groupRoutes')); 
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/uploads', express.static('uploads')); // serve static files
+app.use('/api/upload', require('./routes/upload')); // your upload route
 
 // 🔌 Socket.IO
 io.on('connection', (socket) => {

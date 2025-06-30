@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Group = require('../models/Group'); // Ensure this path is correct
+const Notification = require('../models/Notification')
+const mongoose = require('mongoose');
 
 router.get('/', async (req, res) => {
   const { userId } = req.query;
@@ -29,10 +31,48 @@ router.get('/', async (req, res) => {
 });
 
 // Create a group
+// router.post('/create', async (req, res) => {
+//   try {
+//     const { name, description, category, creatorId, members, progress, nextMeeting, activeDiscussions, isPrivate } = req.body;
+
+
+//     const avatars = members.map(() => 'https://github.com/shadcn.png');
+
+//     const newGroup = await Group.create({
+//       name,
+//       description,
+//       category,
+//       creator: creatorId,
+//       members,
+//       progress,
+//       nextMeeting,
+//       activeDiscussions,
+//       memberAvatars: avatars,
+//       isPrivate
+//     });
+
+//     res.status(201).json(newGroup);
+//   } catch (err) {
+//     console.error('Error creating group:', err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+
 router.post('/create', async (req, res) => {
   try {
-    const { name, description, category, creatorId, members, progress, nextMeeting, activeDiscussions, isPrivate } = req.body;
-
+    const {
+      name,
+      description,
+      category,
+      creatorId,
+      members,
+      progress,
+      nextMeeting,
+      activeDiscussions,
+      isPrivate
+    } = req.body;
 
     const avatars = members.map(() => 'https://github.com/shadcn.png');
 
@@ -49,12 +89,37 @@ router.post('/create', async (req, res) => {
       isPrivate
     });
 
+    // 🔔 Notification: creator + members
+const visibleTo = members.filter(id => id !== creatorId);
+
+
+    const now = new Date();
+
+    await Notification.create({
+      title: 'New Group Created',
+      description: `You've been added to the group "${name}"`,
+      date: now.toISOString().split('T')[0],
+      time: now.toTimeString().split(' ')[0],
+      server: 'Group System',
+      visibleTo,
+      isReadBy: []
+    });
+
     res.status(201).json(newGroup);
   } catch (err) {
     console.error('Error creating group:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
+
+
+
+
+
+
 
 // POST /api/groups/:groupId/reject-request
 router.post('/:groupId/reject-request', async (req, res) => {
@@ -97,29 +162,61 @@ router.post('/:groupId/accept-request', async (req, res) => {
 
   try {
     const group = await Group.findById(req.params.groupId);
+
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    // Check if user is already a member
     if (group.members.includes(userId)) {
       return res.status(400).json({ message: 'User is already a member of this group.' });
     }
 
-    // Add user to members
-    group.members.push(userId);
-    group.memberAvatars.push('https://github.com/shadcn.png'); // Add a default avatar
+    // Notify existing members and creator (excluding new user)
+    const notifyUsers = [
+      group.creator.toString(),
+      ...group.members.map(m => m.toString())
+    ].filter(uid => uid !== userId);
 
-    // Remove user from joinRequests
-    group.joinRequests = group.joinRequests.filter(
-      id => id.toString() !== userId
-    );
+    // Add user to group
+    group.members.push(userId);
+    group.memberAvatars.push('https://github.com/shadcn.png');
+    group.joinRequests = group.joinRequests.filter(id => id.toString() !== userId);
 
     await group.save();
+
+    const now = new Date();
+
+    // 🔔 Notify members & creator
+    if (notifyUsers.length > 0) {
+      await Notification.create({
+        title: 'New Member Joined',
+        description: `A new member has joined your group "${group.name}"`,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().split(' ')[0],
+        server: 'Group System',
+        visibleTo: notifyUsers,
+        isReadBy: []
+      });
+    }
+
+    // 🔔 Notify the user whose request was accepted
+    await Notification.create({
+      title: 'Request Accepted',
+      description: `Your request to join the group "${group.name}" was accepted.`,
+      date: now.toISOString().split('T')[0],
+      time: now.toTimeString().split(' ')[0],
+      server: 'Group System',
+      visibleTo: [userId],
+      isReadBy: []
+    });
+
     res.status(200).json({ message: 'User added to group and request accepted' });
   } catch (err) {
     console.error('Error accepting request:', err);
     res.status(500).json({ message: 'Failed to accept request' });
   }
 });
+
+
+
 
 // POST /api/groups/:groupId/join
 router.post('/:groupId/join', async (req, res) => {
@@ -137,19 +234,55 @@ router.post('/:groupId/join', async (req, res) => {
       return res.status(400).json({ message: 'You are already a member of this group.' });
     }
 
-    if (group.isPrivate) {
-      if (alreadyRequested) {
-        return res.status(400).json({ message: 'Join request already sent for this private group.' });
+   if (group.isPrivate) {
+  if (alreadyRequested) {
+    return res.status(400).json({ message: 'Join request already sent for this private group.' });
+  }
+
+  group.joinRequests.push(userId);
+  await group.save();
+
+  // 🔔 Notify the group creator only
+  const now = new Date();
+  await Notification.create({
+    title: 'New Join Request',
+    description: `A user has requested to join your group "${group.name}"`,
+    date: now.toISOString().split('T')[0],
+    time: now.toTimeString().split(' ')[0],
+    server: 'Group System',
+    visibleTo: [group.creator.toString()],
+    isReadBy: []
+  });
+
+  return res.status(200).json({ message: 'Join request sent for private group. Awaiting creator approval.' });
+}
+
+     else {
+      // Public group — direct join
+      const notifyUsers = [
+        group.creator.toString(),
+        ...group.members.map(m => m.toString())
+      ].filter(uid => uid !== userId);
+
+      group.members.push(userId);
+      group.memberAvatars.push('https://github.com/shadcn.png');
+
+      await group.save();
+
+      // Notify all others
+      if (notifyUsers.length > 0) {
+        const now = new Date();
+        await Notification.create({
+          title: 'New Member Joined',
+          description: `A new member has joined your group "${group.name}"`,
+          date: now.toISOString().split('T')[0],
+          time: now.toTimeString().split(' ')[0],
+          server: 'Group System',
+          visibleTo: notifyUsers,
+          isReadBy: []
+        });
       }
 
-      group.joinRequests.push(userId);
-      await group.save();
-      return res.status(200).json({ message: 'Join request sent for private group. Awaiting creator approval.' });
-    } else {
-      // For public groups, directly add as a member
-      group.members.push(userId);
-      group.memberAvatars.push('https://github.com/shadcn.png'); // optional, but consistent
-      await group.save();
       return res.status(200).json({ message: 'Successfully joined the public group.' });
     }
   } catch (err) {
@@ -157,5 +290,43 @@ router.post('/:groupId/join', async (req, res) => {
     res.status(500).json({ message: 'Failed to join group' });
   }
 });
+
+
+
+
+router.post('/leave-group', async (req, res) => {
+  try {
+    const { groupId, userId } = req.body;
+console.log("leave")
+    if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid groupId or userId' });
+    }
+
+    const group = await Group.findById(groupId);
+
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // If user is creator, you can decide to disallow or auto-delete the group
+    if (group.creator.toString() === userId) {
+      return res.status(400).json({ message: 'Group creator cannot leave. You may delete the group.' });
+    }
+
+    // Remove user from members array
+    group.members = group.members.filter(memberId => memberId.toString() !== userId);
+
+    await group.save();
+
+    return res.status(200).json({
+      message: 'Successfully left the group',
+      group
+    });
+  } catch (error) {
+    console.error('Error leaving group:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 
 module.exports = router;
